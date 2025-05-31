@@ -1,0 +1,23 @@
+[package]
+name = "gmail-archiver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.4"
+base64 = "0.22.1"
+chrono = "0.4.41"
+clap = { version = "4.5.39", features = ["derive"] }
+duckdb = { version = "1.2.2", features = ["bundled"] }
+eyre = "0.6.12"
+maud = "0.27.0"
+rand = "0.9.1"
+reqwest = { version = "0.12.18", features = ["json"] }
+serde = { version = "1.0.219", features = ["derive", "rc"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+tokio = { version = "1.45.1", features = ["full"] }
+tokio-util = "0.7.15"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+webbrowser = { version = "1.0.4", features = ["hardened"] }
