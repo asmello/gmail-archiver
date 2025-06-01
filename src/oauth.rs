@@ -8,7 +8,12 @@ use reqwest::Url;
 use secrets_file::SecretsFile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{fs::File, io::BufReader, path::Path, sync::LazyLock};
+use std::{
+    fs::File,
+    io::BufReader,
+    path::Path,
+    sync::{Arc, LazyLock},
+};
 
 pub static TOKEN_ENDPOINT: LazyLock<Url> =
     LazyLock::new(|| Url::parse("https://oauth2.googleapis.com/token").expect("valid url"));
@@ -59,25 +64,20 @@ impl_as_str!(
     RefreshToken,
     State
 );
+pub(crate) use impl_as_str;
 
-macro_rules! impl_from_to_string {
+macro_rules! impl_from_string {
     ($($ty:ty),+) => {
         $(
             impl From<String> for $ty {
                 fn from(value: String) -> Self {
-                    Self(value)
-                }
-            }
-
-            impl From<$ty> for String {
-                fn from(value: $ty) -> Self {
-                    value.0
+                    Self(value.into())
                 }
             }
         )+
     };
 }
-impl_from_to_string!(AccessToken, RefreshToken);
+impl_from_string!(AccessToken, RefreshToken);
 
 #[derive(Clone, Deserialize)]
 pub struct ClientId(String);
@@ -177,7 +177,7 @@ impl State {
 pub struct AuthzCode(String);
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct AccessToken(String);
+pub struct AccessToken(Arc<str>);
 
 #[derive(Debug, Deserialize)]
 pub struct RefreshToken(String);

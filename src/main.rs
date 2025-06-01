@@ -9,6 +9,7 @@ use client::GmailClient;
 use oauth::{ClientCredentials, TokenManager, client::OAuthClient};
 use std::path::PathBuf;
 use store::Store;
+use tokio_stream::StreamExt;
 
 #[derive(Parser)]
 struct Args {
@@ -38,10 +39,17 @@ async fn main() -> eyre::Result<()> {
         }
     };
     let token_manager = TokenManager::new(oauth_client, store);
-    let mut client = GmailClient::new(token_manager);
-    let profile = client.profile().await?;
+    let client = GmailClient::new(token_manager);
+    let mut messages = client.messages();
 
-    println!("{profile:?}");
+    let mut i = 0;
+    while let Some(message) = messages.next().await.transpose()? {
+        println!("{message:?}");
+        i += 1;
+        if i > 8 {
+            break;
+        }
+    }
 
     Ok(())
 }

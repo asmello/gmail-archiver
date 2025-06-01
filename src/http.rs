@@ -1,12 +1,53 @@
+use crate::oauth::AccessToken;
+use backoff::ExponentialBackoff;
+use bon::bon;
 use core::fmt;
+use eyre::Context;
+use reqwest::{Method, Request, StatusCode, Url};
+use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
 
-use bon::bon;
-use eyre::Context;
-use reqwest::{Method, Url};
-use serde::de::DeserializeOwned;
+// mod error {
+//     use serde::Deserialize;
 
-use crate::oauth::AccessToken;
+//     #[derive(Debug, Deserialize)]
+//     pub struct DefaultError {
+//         error: ErrorDetails,
+//     }
+
+//     #[derive(Debug, Deserialize)]
+//     pub struct ErrorDetails {
+//         code: u16,
+//         message: String,
+//         errors: Vec<GranularError>,
+//         status: String,
+//     }
+
+//     #[derive(Debug, Deserialize)]
+//     pub struct GranularError {
+//         message: String,
+//         domain: ErrorDomain,
+//         reason: ErrorReason,
+//     }
+
+//     #[derive(Debug, Deserialize)]
+//     #[serde(rename_all = "camelCase")]
+//     pub enum ErrorDomain {
+//         Global,
+//     }
+
+//     #[derive(Debug, Deserialize)]
+//     #[serde(rename_all = "camelCase")]
+//     pub enum ErrorReason {
+//         RateLimitExceeded,
+//     }
+
+//     #[derive(Debug, Deserialize)]
+//     #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+//     pub enum Status {
+//         ResourceExhausted,
+//     }
+// }
 
 pub struct GenericClient<E = ()> {
     base_url: Url,
@@ -63,7 +104,8 @@ impl<E: DeserializeOwned + fmt::Debug> GenericClient<E> {
         #[builder(start_fn)] path: impl IntoIterator<Item = &str>,
         #[builder(default = Method::GET)] method: Method,
         form: Option<&[(&str, &str)]>,
-        bearer_auth: Option<&AccessToken>,
+        query: Option<&[(&str, &str)]>,
+        access_token: Option<AccessToken>,
     ) -> eyre::Result<T> {
         let url = {
             let mut url = self.base_url.clone();
@@ -72,19 +114,55 @@ impl<E: DeserializeOwned + fmt::Debug> GenericClient<E> {
         };
 
         let mut request_builder = self.http_client.request(method, url);
-        if let Some(bearer) = bearer_auth {
-            request_builder = request_builder.bearer_auth(bearer.as_str());
+        if let Some(access_token) = access_token {
+            request_builder = request_builder.bearer_auth(access_token.as_str());
         }
         if let Some(form) = form {
             request_builder = request_builder.form(form);
         }
+        if let Some(query) = query {
+            request_builder = request_builder.query(query);
+        }
         let request = request_builder.build()?;
-        tracing::debug!(
-            method = %request.method(),
-            url = %request.url(),
-            headers = ?request.headers(),
-            "executing request");
-        let response = self.http_client.execute(request).await?;
+        self.make_request(request).await
+    }
+
+    // TODO: implement leaky bucket one complication: each kind of request has
+    // a different quota cost, so it probably makes sense to group requests by
+    // type and have a separate bucket for each group
+    pub async fn make_request<T: DeserializeOwned>(&self, request: Request) -> eyre::Result<T> {
+        #[derive(Debug, thiserror::Error)]
+        enum Error {
+            #[error(transparent)]
+            Reqwest(#[from] reqwest::Error),
+            #[error("{0}")]
+            Generic(String),
+        }
+
+        let response = backoff::future::retry(ExponentialBackoff::default(), move || {
+            let request = request.try_clone().expect("no stream");
+            async move {
+                tracing::debug!(
+                method = %request.method(),
+                url = %request.url(),
+                headers = ?request.headers(),
+                "executing request");
+
+                let response = self
+                    .http_client
+                    .execute(request)
+                    .await
+                    .map_err(|err| backoff::Error::permanent(err.into()))?;
+
+                if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                    let text = response.text().await.map_err(Error::Reqwest)?;
+                    return Err(backoff::Error::transient(Error::Generic(text)));
+                }
+
+                Ok(response)
+            }
+        })
+        .await?;
 
         let status = response.status();
         if !status.is_success() {
