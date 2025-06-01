@@ -1,4 +1,7 @@
-use crate::oauth::{OAuthTokens, client::AccessTokenUpdate};
+use crate::{
+    model::{Label, LabelId, Message, MessageId},
+    oauth::{OAuthTokens, client::AccessTokenUpdate},
+};
 use chrono::{DateTime, Utc};
 use duckdb::{Connection, OptionalExt, params};
 use std::{
@@ -30,60 +33,49 @@ impl Store {
         } else {
             // init
             conn.execute_batch(
-                    "
-                        CREATE TABLE tokens (
-                            access_token VARCHAR NOT NULL,
-                            refresh_token VARCHAR UNIQUE NOT NULL,
-                            expires_at TIMESTAMP NOT NULL,
-                            refresh_token_expires_at TIMESTAMP
-                        );
+                "
+                    CREATE TABLE tokens (
+                        access_token VARCHAR NOT NULL,
+                        refresh_token VARCHAR PRIMARY KEY,
+                        expires_at TIMESTAMP NOT NULL,
+                        refresh_token_expires_at TIMESTAMP
+                    );
 
-                        CREATE TABLE threads (
-                            id VARCHAR PRIMARY KEY,
-                            snippet VARCHAR NOT NULL,
-                            history_id VARCHAR NOT NULL
-                        );
+                    CREATE TYPE message_list_visibility AS ENUM ('SHOW', 'HIDE');
+                    CREATE TYPE label_list_visibility AS ENUM ('SHOW', 'SHOW_IF_UNREAD', 'HIDE');
+                    CREATE TYPE label_type AS ENUM ('SYSTEM', 'USER');
 
-                        CREATE TABLE messages (
-                            id VARCHAR PRIMARY KEY,
-                            thread_id VARCHAR NOT NULL,
-                            snippet VARCHAR NOT NULL,
-                            history_id VARCHAR NOT NULL,
-                            internal_date TIMESTAMP NOT NULL,
-                            payload JSON NOT NULL,
-                            size_estimate BIGINT NOT NULL,
-                            raw VARCHAR NOT NULL,
-                            FOREIGN KEY (thread_id) REFERENCES threads (id)
-                        );
+                    CREATE TABLE labels (
+                        id VARCHAR PRIMARY KEY,
+                        name VARCHAR NOT NULL,
+                        message_list_visibility message_list_visibility,
+                        label_list_visibility label_list_visibility,
+                        type label_type NOT NULL,
+                        color_text VARCHAR,
+                        background_color VARCHAR
+                    );
 
-                        CREATE TYPE message_list_visibility AS ENUM ('show', 'hide');
-                        CREATE TYPE label_list_visibility AS ENUM ('labelShow', 'labelShowIfUnread', 'labelHide');
-                        CREATE TYPE label_type AS ENUM ('system', 'user');
+                    CREATE TABLE messages (
+                        id VARCHAR PRIMARY KEY,
+                        thread_id VARCHAR NOT NULL,
+                        snippet VARCHAR,
+                        history_id VARCHAR NOT NULL,
+                        internal_date TIMESTAMP NOT NULL,
+                        payload JSON NOT NULL,
+                        size_estimate BIGINT NOT NULL
+                    );
 
-                        CREATE TABLE labels (
-                            id VARCHAR PRIMARY KEY,
-                            name VARCHAR NOT NULL,
-                            message_list_visibility message_list_visibility NOT NULL,
-                            label_list_visibility label_list_visibility NOT NULL,
-                            type label_type NOT NULL,
-                            messages_total BIGINT NOT NULL,
-                            messsages_unread BIGINT NOT NULL,
-                            threads_total BIGINT NOT NULL,
-                            threads_unread BIGINT NOT NULL,
-                            color_text VARCHAR NOT NULL,
-                            background_color VARCHAR NOT NULL
-                        );
+                    CREATE TABLE message_labels (
+                        message_id VARCHAR,
+                        label_id VARCHAR,
+                        PRIMARY KEY (message_id, label_id),
+                        FOREIGN KEY (message_id) REFERENCES messages (id),
+                        FOREIGN KEY (label_id) REFERENCES labels (id)
+                    );
 
-                        CREATE TABLE message_labels (
-                            message_id VARCHAR NOT NULL,
-                            label_id VARCHAR NOT NULL,
-                            FOREIGN KEY (message_id) REFERENCES messages (id),
-                            FOREIGN KEY (label_id) REFERENCES labels (id)
-                        );
-
-                        CREATE TABLE version AS SELECT 0;
+                    CREATE TABLE version AS SELECT 0;
                     ",
-                )?;
+            )?;
         }
 
         Ok(())
@@ -113,6 +105,7 @@ impl Store {
             expires_at,
             refresh_token_expires_at,
         } = tokens;
+        tracing::debug!("token expires: {}", expires_at.to_rfc3339());
         self.conn.lock().unwrap().execute(
             "INSERT OR REPLACE INTO tokens VALUES (?, ?, ?, ?)",
             params![
@@ -134,6 +127,66 @@ impl Store {
             "INSERT OR REPLACE INTO tokens (access_token, expires_at) VALUES (?, ?)",
             params![access_token.as_str(), expires_at.to_rfc3339()],
         )?;
+        Ok(())
+    }
+
+    pub fn contains_label(&self, id: &LabelId) -> eyre::Result<bool> {
+        let count: usize = self.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM labels WHERE id = ?",
+            [id.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn insert_label(&self, label: &Label) -> eyre::Result<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO labels VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                label.id.as_str(),
+                label.name.as_str(),
+                label.message_list_visibility.map(<&str>::from),
+                label.label_list_visibility.map(<&str>::from),
+                <&str>::from(label.r#type),
+                label.color.as_ref().map(|c| c.text_color.as_str()),
+                label.color.as_ref().map(|c| c.background_color.as_str()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn contains_message(&self, id: &MessageId) -> eyre::Result<bool> {
+        let count: usize = self.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM messages WHERE id = ?",
+            [id.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn insert_message(&self, message: &Message) -> eyre::Result<()> {
+        let payload = serde_json::to_string(&message.payload)?;
+        let mut guard = self.conn.lock().unwrap();
+        let tr = guard.transaction()?;
+        tr.execute(
+            "INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                message.id.as_str(),
+                message.thread_id.as_str(),
+                message.snippet.as_str(),
+                message.history_id.as_str(),
+                message.internal_date.to_rfc3339(),
+                &payload,
+                message.size_estimate,
+            ],
+        )?;
+        for label_id in &message.label_ids {
+            tr.execute(
+                "INSERT INTO message_labels VALUES (?, ?)",
+                params![message.id.as_str(), label_id.as_str()],
+            )?;
+        }
+        tr.commit()?;
         Ok(())
     }
 }

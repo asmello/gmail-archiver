@@ -1,9 +1,13 @@
+#![allow(dead_code)]
+
+use crate::macros::{impl_as_str, impl_display};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
+use strum::IntoStaticStr;
 
-use crate::oauth::impl_as_str;
-use serde::Deserialize;
-
-impl_as_str!(PageToken, MessageId);
+impl_as_str!(PageToken, MessageId, LabelId, ThreadId, HistoryId);
+impl_display!(LabelId, ThreadId, MessageId);
 
 pub struct PageParts<T> {
     pub next_page_token: Option<PageToken>,
@@ -35,10 +39,9 @@ pub struct HistoryId(String);
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
-    id: ThreadId,
-    snippet: String,
-    history_id: HistoryId,
-    messages: Vec<MinimalMessage>,
+    pub id: ThreadId,
+    pub history_id: HistoryId,
+    pub messages: Vec<MinimalMessage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,9 +54,8 @@ pub struct MinimalMessage {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MinimalThread {
-    id: ThreadId,
-    snippet: String,
-    history_id: HistoryId,
+    pub id: ThreadId,
+    pub history_id: HistoryId,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,21 +73,33 @@ pub struct LabelId(String);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FullMessage {
-    id: MessageId,
-    thread_id: ThreadId,
-    label_ids: Vec<LabelId>,
-    snippet: String,
-    history_id: HistoryId,
-    internal_date: String,
-    size_estimate: usize,
-    payload: MessagePart,
+pub struct Message {
+    pub id: MessageId,
+    pub thread_id: ThreadId,
+    pub label_ids: Vec<LabelId>,
+    pub snippet: String,
+    pub history_id: HistoryId,
+    #[serde(deserialize_with = "deserialize_unix_ts_str")]
+    pub internal_date: DateTime<Utc>,
+    pub size_estimate: usize,
+    pub payload: MessagePart,
 }
 
-#[derive(Debug, Deserialize)]
+fn deserialize_unix_ts_str<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = <&str>::deserialize(deserializer)?;
+    let millis: i64 = s.parse().map_err(serde::de::Error::custom)?;
+    let dt = DateTime::from_timestamp_millis(millis)
+        .ok_or_else(|| serde::de::Error::custom("invalid range"))?;
+    Ok(dt)
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PartId(String);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessagePart {
     part_id: PartId,
@@ -96,19 +110,80 @@ pub struct MessagePart {
     parts: Option<Vec<MessagePart>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct AttachmentId(String);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessagePartBody {
-    size: usize,
-    attachment_id: Option<AttachmentId>,
-    data: Option<String>,
+    pub size: usize,
+    pub attachment_id: Option<AttachmentId>,
+    pub data: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Header {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Header {
-    name: String,
-    value: String,
+#[serde(rename_all = "camelCase")]
+pub struct MinimalLabel {
+    pub id: LabelId,
+    pub name: String,
+    pub message_list_visibility: Option<MessageListVisibility>,
+    pub label_list_visibility: Option<LabelListVisibility>,
+    pub r#type: LabelType,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LabelList {
+    pub labels: Vec<MinimalLabel>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Label {
+    pub id: LabelId,
+    pub name: String,
+    pub message_list_visibility: Option<MessageListVisibility>,
+    pub label_list_visibility: Option<LabelListVisibility>,
+    pub r#type: LabelType,
+    pub color: Option<LabelColor>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone, Copy, IntoStaticStr)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum MessageListVisibility {
+    Show,
+    Hide,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone, Copy, IntoStaticStr)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum LabelListVisibility {
+    #[serde(rename = "labelShow")]
+    Show,
+    #[serde(rename = "labelShowIfUnread")]
+    ShowIfUnread,
+    #[serde(rename = "labelHide")]
+    Hide,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone, Copy, IntoStaticStr)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum LabelType {
+    System,
+    User,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelColor {
+    pub text_color: String,
+    pub background_color: String,
 }

@@ -127,7 +127,7 @@ impl<E: DeserializeOwned + fmt::Debug> GenericClient<E> {
         self.make_request(request).await
     }
 
-    // TODO: implement leaky bucket one complication: each kind of request has
+    // TODO: implement leaky bucket. one complication: each kind of request has
     // a different quota cost, so it probably makes sense to group requests by
     // type and have a separate bucket for each group
     pub async fn make_request<T: DeserializeOwned>(&self, request: Request) -> eyre::Result<T> {

@@ -1,7 +1,11 @@
 pub mod client;
 mod server;
 
-use crate::{http::GenericClient, store::Store};
+use crate::{
+    http::GenericClient,
+    macros::{impl_as_str, impl_from_string},
+    store::Store,
+};
 use chrono::{DateTime, Utc};
 use client::OAuthClient;
 use reqwest::Url;
@@ -45,17 +49,6 @@ impl TokenManager {
     }
 }
 
-macro_rules! impl_as_str {
-    ($($ty:ty),+) => {
-        $(
-            impl $ty {
-                pub fn as_str(&self) -> &str {
-                    &self.0
-                }
-            }
-        )+
-    };
-}
 impl_as_str!(
     ClientId,
     ClientSecret,
@@ -64,19 +57,7 @@ impl_as_str!(
     RefreshToken,
     State
 );
-pub(crate) use impl_as_str;
 
-macro_rules! impl_from_string {
-    ($($ty:ty),+) => {
-        $(
-            impl From<String> for $ty {
-                fn from(value: String) -> Self {
-                    Self(value.into())
-                }
-            }
-        )+
-    };
-}
 impl_from_string!(AccessToken, RefreshToken);
 
 #[derive(Clone, Deserialize)]

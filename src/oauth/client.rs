@@ -61,18 +61,24 @@ impl PartialOAuthClient {
             .await?;
 
         let now = Utc::now();
-        let tokens = OAuthTokens {
-            access_token: resp.access_token.into(),
-            refresh_token: resp.refresh_token.into(),
-            expires_at: now + Duration::from_secs(resp.expires_in),
-            refresh_token_expires_at: resp
-                .refresh_token_expires_in
-                .map(|v| now + Duration::from_secs(v)),
-        };
+        let expires_at = now + Duration::from_secs(resp.expires_in);
+        let refresh_token_expires_at = resp
+            .refresh_token_expires_in
+            .map(|v| now + Duration::from_secs(v));
+        tracing::debug!(
+            "access token expires in {} seconds: {}",
+            resp.expires_in,
+            expires_at
+        );
         Ok(OAuthClient {
             creds: self.creds.clone(),
             http_client: self.http_client.clone(),
-            tokens,
+            tokens: OAuthTokens {
+                access_token: resp.access_token.into(),
+                refresh_token: resp.refresh_token.into(),
+                expires_at,
+                refresh_token_expires_at,
+            },
         })
     }
 }

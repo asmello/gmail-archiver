@@ -635,16 +635,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordyceps"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "688d7fbb8092b8de775ef2536f36c8c31f2bc4006ece2e8d8ad2d17d00ce0a2a"
-dependencies = [
- "loom",
- "tracing",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -740,12 +730,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "diatomic-waker"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab03c107fafeb3ee9f5925686dbb7a73bc76e3932abb0d2b365cb64b169cf04c"
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -782,7 +766,7 @@ dependencies = [
  "num-integer",
  "rust_decimal",
  "smallvec",
- "strum",
+ "strum 0.25.0",
 ]
 
 [[package]]
@@ -897,19 +881,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
-name = "futures-buffered"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe940397c8b744b9c2c974791c2c08bca2c3242ce0290393249e98f215a00472"
-dependencies = [
- "cordyceps",
- "diatomic-waker",
- "futures-core",
- "pin-project-lite",
- "spin",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -946,20 +917,6 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "pin-utils",
-]
-
-[[package]]
-name = "generator"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d18470a76cb7f8ff746cf1f7470914f900252ec36bbc40b569d74b1258446827"
-dependencies = [
- "cc",
- "cfg-if",
- "libc",
- "log",
- "rustversion",
- "windows",
 ]
 
 [[package]]
@@ -1013,14 +970,13 @@ dependencies = [
  "clap",
  "duckdb",
  "eyre",
- "futures-buffered",
- "futures-core",
  "maud",
  "rand 0.9.1",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
+ "strum 0.27.1",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
@@ -1607,19 +1563,6 @@ name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
-
-[[package]]
-name = "loom"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
-dependencies = [
- "cfg-if",
- "generator",
- "scoped-tls",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "matchers"
@@ -2344,12 +2287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scoped-tls"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
-
-[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2505,12 +2442,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spin"
-version = "0.9.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-
-[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2534,7 +2465,16 @@ version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.25.3",
+]
+
+[[package]]
+name = "strum"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f64def088c51c9510a8579e3c5d67c65349dcf755e5479ad3d010aa6454e2c32"
+dependencies = [
+ "strum_macros 0.27.1",
 ]
 
 [[package]]
@@ -2544,6 +2484,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23dc1fa9ac9c169a78ba62f0b841814b7abae11bdd047b9c58f893439e309ea0"
 dependencies = [
  "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.101",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c77a8c5abcaf0f9ce05d62342b7d298c346515365c36b673df4ebe3ced01fde8"
+dependencies = [
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "rustversion",
@@ -3182,28 +3135,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
-name = "windows"
-version = "0.61.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5ee8f3d025738cb02bad7868bbb5f8a6327501e870bf51f1b455b0a2454a419"
-dependencies = [
- "windows-collections",
- "windows-core",
- "windows-future",
- "windows-link",
- "windows-numerics",
-]
-
-[[package]]
-name = "windows-collections"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8"
-dependencies = [
- "windows-core",
-]
-
-[[package]]
 name = "windows-core"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3214,17 +3145,6 @@ dependencies = [
  "windows-link",
  "windows-result",
  "windows-strings 0.4.2",
-]
-
-[[package]]
-name = "windows-future"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e"
-dependencies = [
- "windows-core",
- "windows-link",
- "windows-threading",
 ]
 
 [[package]]
@@ -3254,16 +3174,6 @@ name = "windows-link"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76840935b766e1b0a05c0066835fb9ec80071d4c09a16f6bd5f7e655e3c14c38"
-
-[[package]]
-name = "windows-numerics"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
-dependencies = [
- "windows-core",
- "windows-link",
-]
 
 [[package]]
 name = "windows-registry"
@@ -3375,15 +3285,6 @@ dependencies = [
  "windows_x86_64_gnu 0.53.0",
  "windows_x86_64_gnullvm 0.53.0",
  "windows_x86_64_msvc 0.53.0",
-]
-
-[[package]]
-name = "windows-threading"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66463ad2e0ea3bbf808b7f1d371311c80e115c0b71d60efc142cafbcfb057a6"
-dependencies = [
- "windows-link",
 ]
 
 [[package]]
