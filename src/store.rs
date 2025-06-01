@@ -1,4 +1,4 @@
-use crate::oauth::OAuthTokens;
+use crate::oauth::{OAuthTokens, client::AccessTokenUpdate};
 use chrono::{DateTime, Utc};
 use duckdb::{Connection, OptionalExt, params};
 use std::{
@@ -66,6 +66,18 @@ impl Store {
                 expires_at.to_rfc3339(),
                 refresh_token_expires_at.map(|t| t.to_rfc3339())
             ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_access_token(&self, update: AccessTokenUpdate) -> eyre::Result<()> {
+        let AccessTokenUpdate {
+            access_token,
+            expires_at,
+        } = update;
+        self.conn.lock().unwrap().execute(
+            "INSERT OR REPLACE INTO tokens (access_token, expires_at) VALUES (?, ?)",
+            params![access_token.as_str(), expires_at.to_rfc3339()],
         )?;
         Ok(())
     }

@@ -1,4 +1,4 @@
-use super::{AuthzCode, ClientCredentials, CodeVerifier, OAuthTokens, State as OAuthState};
+use super::{AuthzCode, ClientCredentials, CodeVerifier, State as OAuthState, client::OAuthClient};
 use axum::{
     Router,
     extract::{Query, State},
@@ -20,7 +20,7 @@ pub async fn wait_response(
     creds: ClientCredentials,
     state: OAuthState,
     verifier: CodeVerifier,
-) -> eyre::Result<OAuthTokens> {
+) -> eyre::Result<OAuthClient> {
     let token = CancellationToken::new();
     let (tx, rx) = oneshot::channel();
     let router = make_router(ServerState::new(creds, state, verifier, token.clone(), tx));
@@ -91,7 +91,10 @@ async fn callback(
 }
 
 mod state {
-    use crate::oauth::{ClientCredentials, CodeVerifier, OAuthTokens, State, client::OAuthClient};
+    use crate::oauth::{
+        ClientCredentials, CodeVerifier, State,
+        client::{OAuthClient, PartialOAuthClient},
+    };
     use std::sync::{Arc, Mutex};
     use tokio::sync::oneshot;
     use tokio_util::sync::CancellationToken;
@@ -103,9 +106,9 @@ mod state {
 
     struct ServerStateInner {
         state: State,
-        client: OAuthClient,
+        client: PartialOAuthClient,
         cancel: CancellationToken,
-        tx: Mutex<Option<oneshot::Sender<OAuthTokens>>>,
+        tx: Mutex<Option<oneshot::Sender<OAuthClient>>>,
     }
 
     impl ServerState {
@@ -114,13 +117,13 @@ mod state {
             state: State,
             verifier: CodeVerifier,
             cancel: CancellationToken,
-            tx: oneshot::Sender<OAuthTokens>,
+            tx: oneshot::Sender<OAuthClient>,
         ) -> Self {
             Self {
                 inner: Arc::new(ServerStateInner {
                     state,
                     cancel,
-                    client: OAuthClient::new(creds, verifier),
+                    client: PartialOAuthClient::new(creds, verifier),
                     tx: Mutex::new(Some(tx)),
                 }),
             }
@@ -130,15 +133,15 @@ mod state {
             &self.inner.state
         }
 
-        pub fn client(&self) -> &OAuthClient {
+        pub fn client(&self) -> &PartialOAuthClient {
             &self.inner.client
         }
 
-        pub fn complete(self, tokens: OAuthTokens) {
+        pub fn complete(self, client: OAuthClient) {
             self.inner.cancel.cancel();
             let maybe_sender = self.inner.tx.lock().unwrap().take();
             if let Some(sender) = maybe_sender {
-                let _ = sender.send(tokens);
+                let _ = sender.send(client);
             }
         }
     }

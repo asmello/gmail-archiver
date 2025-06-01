@@ -1,37 +1,42 @@
-mod client;
+pub mod client;
 mod server;
 
+use crate::{http::GenericClient, store::Store};
 use chrono::{DateTime, Utc};
+use client::OAuthClient;
 use reqwest::Url;
 use secrets_file::SecretsFile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{fs::File, io::BufReader, path::Path};
+use std::{fs::File, io::BufReader, path::Path, sync::LazyLock};
 
-pub const AUTHZ_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-pub const REDIRECT_URI: &str = "http://127.0.0.1:47218/callback";
-pub const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
+pub static TOKEN_ENDPOINT: LazyLock<Url> =
+    LazyLock::new(|| Url::parse("https://oauth2.googleapis.com/token").expect("valid url"));
 
-pub struct OAuthBroker;
+pub struct TokenManager {
+    client: OAuthClient,
+    store: Store,
+}
 
-impl OAuthBroker {
-    pub async fn authorize(creds: ClientCredentials) -> eyre::Result<OAuthTokens> {
-        let code_verifier = CodeVerifier::new();
-        let state = State::new();
+impl TokenManager {
+    pub fn new(client: OAuthClient, store: Store) -> Self {
+        Self { client, store }
+    }
 
-        let mut url = Url::parse(AUTHZ_ENDPOINT)?;
-        url.query_pairs_mut()
-            .append_pair("client_id", creds.id.as_str())
-            .append_pair("redirect_uri", REDIRECT_URI)
-            .append_pair("response_type", "code")
-            .append_pair("scope", "https://mail.google.com/")
-            .append_pair("code_challenge", &code_verifier.to_s256())
-            .append_pair("code_challenge_method", "S256")
-            .append_pair("state", state.as_str());
+    pub fn http_client<E>(&self) -> GenericClient<E> {
+        self.client.http_client()
+    }
 
-        webbrowser::open(url.as_str())?;
-        println!("Authorization URL: {url}");
-        server::wait_response(creds, state, code_verifier).await
+    pub async fn update_access_token(&mut self) -> eyre::Result<()> {
+        if let Some(update) = self.client.check_access_token().await? {
+            tracing::debug!("access token refreshed, will update database");
+            self.store.update_access_token(update)?;
+        }
+        Ok(())
+    }
+
+    pub fn access_token(&self) -> &AccessToken {
+        self.client.access_token()
     }
 }
 
@@ -55,7 +60,7 @@ impl_as_str!(
     State
 );
 
-macro_rules! impl_from_string {
+macro_rules! impl_from_to_string {
     ($($ty:ty),+) => {
         $(
             impl From<String> for $ty {
@@ -63,10 +68,16 @@ macro_rules! impl_from_string {
                     Self(value)
                 }
             }
+
+            impl From<$ty> for String {
+                fn from(value: $ty) -> Self {
+                    value.0
+                }
+            }
         )+
     };
 }
-impl_from_string!(AccessToken, RefreshToken);
+impl_from_to_string!(AccessToken, RefreshToken);
 
 #[derive(Clone, Deserialize)]
 pub struct ClientId(String);
@@ -165,10 +176,10 @@ impl State {
 #[derive(Deserialize)]
 pub struct AuthzCode(String);
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AccessToken(String);
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct RefreshToken(String);
 
 #[derive(Debug)]
