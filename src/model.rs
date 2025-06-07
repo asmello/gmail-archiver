@@ -32,10 +32,10 @@ pub struct PageToken(String);
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
-    email_address: String,
-    messages_total: usize,
-    threads_total: usize,
-    history_id: String,
+    pub email_address: String,
+    pub messages_total: usize,
+    pub threads_total: usize,
+    pub history_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,6 +135,12 @@ pub struct MessagePart {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AttachmentId(String);
+
+impl From<String> for AttachmentId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

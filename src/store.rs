@@ -160,7 +160,7 @@ impl Store {
             expires_at,
         } = update;
         self.conn.lock().unwrap().execute(
-            "INSERT OR REPLACE INTO tokens (access_token, expires_at) VALUES (?, ?)",
+            "UPDATE tokens SET access_token = ?, expires_at = ?",
             params![access_token.as_str(), expires_at.to_rfc3339()],
         )?;
         Ok(())
@@ -189,6 +189,15 @@ impl Store {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn message_count(&self) -> eyre::Result<usize> {
+        let count =
+            self.conn
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM messages", [], |row| row.get(0))?;
+        Ok(count)
     }
 
     pub fn contains_message(&self, id: &MessageId) -> eyre::Result<bool> {
@@ -281,6 +290,36 @@ impl Store {
         Ok(())
     }
 
+    pub fn attachment_ids(&self, message_id: &MessageId) -> eyre::Result<Vec<AttachmentId>> {
+        let ids = self
+            .conn
+            .lock()
+            .unwrap()
+            .prepare_cached(
+                "SELECT attachment_id FROM message_part_body
+                WHERE message_id = ? AND attachment_id IS NOT NULL",
+            )?
+            .query_map([message_id.as_str()], |row| {
+                let id: String = row.get(0)?;
+                Ok(id.into())
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ids)
+    }
+
+    pub fn contains_message_attachment(
+        &self,
+        message_id: &MessageId,
+        attachment_id: &AttachmentId,
+    ) -> eyre::Result<bool> {
+        let count: usize = self.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM message_attachments WHERE message_id = ? AND attachment_id = ?",
+            [message_id.as_str(), attachment_id.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
     pub fn insert_raw_message(&self, message_id: &MessageId, data: &[u8]) -> eyre::Result<()> {
         self.conn.lock().unwrap().execute(
             "INSERT INTO raw_messages VALUES (?, ?)",
@@ -288,11 +327,20 @@ impl Store {
         )?;
         Ok(())
     }
+
+    pub fn contains_raw_message(&self, message_id: &MessageId) -> eyre::Result<bool> {
+        let count: usize = self.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM raw_messages WHERE message_id = ?",
+            [message_id.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
 }
 
 fn as_datetime(row: &duckdb::Row, idx: usize) -> duckdb::Result<DateTime<Utc>> {
     let val = row.get(idx)?;
-    DateTime::from_timestamp_millis(val)
+    DateTime::from_timestamp_micros(val)
         .ok_or_else(|| duckdb::Error::IntegralValueOutOfRange(idx, val.into()))
 }
 
@@ -300,7 +348,7 @@ fn as_datetime_optional(row: &duckdb::Row, idx: usize) -> duckdb::Result<Option<
     let Some(val) = row.get::<_, Option<i64>>(idx)? else {
         return Ok(None);
     };
-    Ok(Some(DateTime::from_timestamp_millis(val).ok_or_else(
+    Ok(Some(DateTime::from_timestamp_micros(val).ok_or_else(
         || duckdb::Error::IntegralValueOutOfRange(idx, val.into()),
     )?))
 }

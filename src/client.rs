@@ -2,7 +2,7 @@ use crate::{
     http::GenericClient,
     model::{
         Attachment, AttachmentId, FullMessage, Label, LabelId, LabelList, MessageId,
-        MinimalMessage, PageToken, RawMessage,
+        MinimalMessage, PageToken, RawMessage, UserProfile,
     },
     oauth::{AccessToken, TokenManager},
 };
@@ -41,6 +41,15 @@ impl GmailClient {
         Ok(guard.access_token().clone())
     }
 
+    pub async fn profile(&self) -> eyre::Result<UserProfile> {
+        self.inner
+            .http_client
+            .request(["users", "me", "profile"])
+            .access_token(self.access_token().await?)
+            .send()
+            .await
+    }
+
     pub async fn label(&self, id: &LabelId) -> eyre::Result<Label> {
         self.inner
             .http_client
@@ -58,51 +67,6 @@ impl GmailClient {
             .send()
             .await
     }
-
-    // pub fn list_threads(&self) -> impl Stream<Item = eyre::Result<MinimalThread>> {
-    //     #[derive(Debug, Deserialize)]
-    //     #[serde(rename_all = "camelCase")]
-    //     pub struct ThreadsPage {
-    //         threads: Vec<MinimalThread>,
-    //         next_page_token: Option<PageToken>,
-    //     }
-
-    //     let (tx, rx) = mpsc::channel(32);
-    //     tokio::spawn(self.clone().result_wrapper(tx, |this, tx| async move {
-    //         let fetch_page = async |page_token: Option<PageToken>| -> eyre::Result<ThreadsPage> {
-    //             this.inner
-    //                 .http_client
-    //                 .request(["users", "me", "threads"])
-    //                 .access_token(this.access_token().await?)
-    //                 .maybe_query(
-    //                     page_token
-    //                         .as_ref()
-    //                         .map(|t| [("pageToken", t.as_str())])
-    //                         .as_ref()
-    //                         .map(|t| t.as_slice()),
-    //                 )
-    //                 .send()
-    //                 .await
-    //         };
-
-    //         let mut page = fetch_page(None).await?;
-    //         for thread in page.threads {
-    //             if tx.send(Ok(thread)).await.is_err() {
-    //                 return Ok(());
-    //             }
-    //         }
-    //         while let Some(token) = page.next_page_token {
-    //             page = fetch_page(Some(token)).await?;
-    //             for thread in page.threads {
-    //                 if tx.send(Ok(thread)).await.is_err() {
-    //                     return Ok(());
-    //                 }
-    //             }
-    //         }
-    //         Ok(())
-    //     }));
-    //     ReceiverStream::new(rx)
-    // }
 
     async fn message<M>(&self, id: &MessageId, format: &str) -> eyre::Result<M>
     where

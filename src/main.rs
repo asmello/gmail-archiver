@@ -7,11 +7,12 @@ mod store;
 
 use clap::Parser;
 use client::GmailClient;
-use model::{AttachmentId, FullMessage};
+use model::{AttachmentId, FullMessage, MessageId};
 use oauth::{ClientCredentials, TokenManager, client::OAuthClient};
 use std::path::PathBuf;
 use store::Store;
 use tokio_stream::StreamExt;
+use tracing::Level;
 
 #[derive(Parser)]
 struct Args {
@@ -78,23 +79,54 @@ async fn fetch_labels(client: &GmailClient, store: &Store) -> eyre::Result<()> {
 }
 
 async fn fetch_messages(client: &GmailClient, store: &Store) -> eyre::Result<()> {
+    let profile = client.profile().await?;
+    let total = profile.messages_total;
+    let stored = store.message_count()?;
+    tracing::info!("total messages: {total}, stored: {stored}");
+    let mut fetched = 0;
     let mut messages = client.list_messages();
     while let Some(message) = messages.next().await.transpose()? {
         if store.contains_message(&message.id)? {
             tracing::debug!(id = %message.id, "message already stored");
-            continue;
+            for attachment_id in store.attachment_ids(&message.id)? {
+                fetch_attachment(client, store, &message.id, &attachment_id).await?;
+            }
+        } else {
+            let message = client.full_message(&message.id).await?;
+            store.insert_message(&message)?;
+            tracing::debug!(id = %message.id, "message stored successfully");
+            for attachment_id in extract_attachment_ids(&message) {
+                fetch_attachment(client, store, &message.id, attachment_id).await?;
+            }
         }
-        let message = client.full_message(&message.id).await?;
-        store.insert_message(&message)?;
-        tracing::debug!(id = %message.id, "message stored successfully");
-        let raw_message = client.raw_message(&message.id).await?;
-        store.insert_raw_message(&message.id, &raw_message.raw)?;
-        tracing::debug!(id = %message.id, "raw message stored successfully");
-        for attachment_id in extract_attachment_ids(&message) {
-            let attachment = client.attachment(&message.id, attachment_id).await?;
-            store.insert_attachment(&message.id, attachment_id, &attachment)?;
-            tracing::debug!(id = %attachment_id, "attachment stored succesfully");
+        if store.contains_raw_message(&message.id)? {
+            tracing::debug!(id = %message.id, "raw message already stored");
+        } else {
+            let raw_message = client.raw_message(&message.id).await?;
+            store.insert_raw_message(&message.id, &raw_message.raw)?;
+            tracing::debug!(id = %message.id, "raw message stored successfully");
         }
+        fetched += 1;
+        if fetched % 1000 == 0 {
+            tracing::info!(total, "fetched {}K messages", fetched / 1000);
+        }
+    }
+    Ok(())
+}
+
+#[tracing::instrument(level = Level::DEBUG, skip_all, fields(msg_id = %message_id, id = %attachment_id))]
+async fn fetch_attachment(
+    client: &GmailClient,
+    store: &Store,
+    message_id: &MessageId,
+    attachment_id: &AttachmentId,
+) -> eyre::Result<()> {
+    if store.contains_message_attachment(message_id, attachment_id)? {
+        tracing::debug!("attachment already stored");
+    } else {
+        let attachment = client.attachment(message_id, attachment_id).await?;
+        store.insert_attachment(message_id, attachment_id, &attachment)?;
+        tracing::debug!("attachment stored succesfully");
     }
     Ok(())
 }

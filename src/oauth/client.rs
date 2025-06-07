@@ -139,7 +139,7 @@ impl OAuthClient {
         }
 
         if self.tokens.expires_at > Utc::now() {
-            tracing::debug!("access token still valid");
+            tracing::debug!(expires_at = %self.tokens.expires_at, "access token still valid");
             return Ok(None);
         }
         tracing::info!("access token expired, fetching new one");
