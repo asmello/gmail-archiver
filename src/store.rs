@@ -1,5 +1,5 @@
 use crate::{
-    model::{Label, LabelId, Message, MessageId},
+    model::{AttachmentId, Label, LabelId, Message, MessageId},
     oauth::{OAuthTokens, client::AccessTokenUpdate},
 };
 use chrono::{DateTime, Utc};
@@ -61,7 +61,6 @@ impl Store {
                         snippet VARCHAR,
                         history_id VARCHAR NOT NULL,
                         internal_date TIMESTAMP NOT NULL,
-                        payload JSON NOT NULL,
                         size_estimate BIGINT NOT NULL
                     );
 
@@ -71,6 +70,28 @@ impl Store {
                         PRIMARY KEY (message_id, label_id),
                         FOREIGN KEY (message_id) REFERENCES messages (id),
                         FOREIGN KEY (label_id) REFERENCES labels (id)
+                    );
+
+                    CREATE TABLE message_parts (
+                        message_id VARCHAR NOT NULL,
+                        part_id VARCHAR NOT NULL,
+                        mime_type VARCHAR,
+                        filename VARCHAR,
+                        headers STRUCT(name VARCHAR, value VARCHAR)[],
+                        children VARCHAR[],
+                        PRIMARY KEY (message_id, part_id),
+                        FOREIGN KEY (message_id) REFERENCES messages (id)
+                    );
+
+                    CREATE TABLE message_part_body (
+                        message_id VARCHAR NOT NULL,
+                        part_id VARCHAR NOT NULL,
+                        attachment_id VARCHAR,
+                        size BIGINT NOT NULL,
+                        data BLOB,
+                        FOREIGN KEY (message_id, part_id)
+                            REFERENCES message_parts(message_id, part_id),
+                        FOREIGN KEY (message_id) REFERENCES messages (id)
                     );
 
                     CREATE TABLE version AS SELECT 0;
@@ -165,18 +186,16 @@ impl Store {
     }
 
     pub fn insert_message(&self, message: &Message) -> eyre::Result<()> {
-        let payload = serde_json::to_string(&message.payload)?;
         let mut guard = self.conn.lock().unwrap();
         let tr = guard.transaction()?;
         tr.execute(
-            "INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?)",
             params![
                 message.id.as_str(),
                 message.thread_id.as_str(),
                 message.snippet.as_str(),
                 message.history_id.as_str(),
                 message.internal_date.to_rfc3339(),
-                &payload,
                 message.size_estimate,
             ],
         )?;
@@ -184,6 +203,45 @@ impl Store {
             tr.execute(
                 "INSERT INTO message_labels VALUES (?, ?)",
                 params![message.id.as_str(), label_id.as_str()],
+            )?;
+        }
+        let mut message_parts = Vec::from([&message.payload]);
+        while let Some(message_part) = message_parts.pop() {
+            let mut children = Vec::new();
+            if let Some(parts) = &message_part.parts {
+                for part in parts {
+                    children.push(part.part_id.to_string());
+                    message_parts.push(part);
+                }
+            }
+            // the duckdb crate does not support composite types directly.
+            // see https://github.com/duckdb/duckdb-rs/issues/394
+            let children = serde_json::to_string(&children)?;
+            let headers = serde_json::to_string(&message_part.headers)?;
+            tr.execute(
+                "INSERT INTO message_parts VALUES (?, ?, ?, ?, ?, ?::JSON::TEXT[])",
+                params![
+                    message.id.as_str(),
+                    message_part.part_id.as_str(),
+                    message_part.mime_type.as_str(),
+                    message_part.filename.as_str(),
+                    headers,
+                    children
+                ],
+            )?;
+            tr.execute(
+                "INSERT INTO message_part_body VALUES (?, ?, ?, ?, ?)",
+                params![
+                    message.id.as_str(),
+                    message_part.part_id.as_str(),
+                    message_part
+                        .body
+                        .attachment_id
+                        .as_ref()
+                        .map(AttachmentId::as_str),
+                    message_part.body.size,
+                    message_part.body.data
+                ],
             )?;
         }
         tr.commit()?;

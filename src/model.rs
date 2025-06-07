@@ -6,8 +6,16 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 use strum::IntoStaticStr;
 
-impl_as_str!(PageToken, MessageId, LabelId, ThreadId, HistoryId);
-impl_display!(LabelId, ThreadId, MessageId);
+impl_as_str!(
+    PageToken,
+    MessageId,
+    LabelId,
+    ThreadId,
+    HistoryId,
+    PartId,
+    AttachmentId
+);
+impl_display!(LabelId, ThreadId, MessageId, PartId);
 
 pub struct PageParts<T> {
     pub next_page_token: Option<PageToken>,
@@ -96,18 +104,18 @@ where
     Ok(dt)
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PartId(String);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessagePart {
-    part_id: PartId,
-    mime_type: String,
-    filename: String,
-    headers: Vec<Header>,
-    body: MessagePartBody,
-    parts: Option<Vec<MessagePart>>,
+    pub part_id: PartId,
+    pub mime_type: String,
+    pub filename: String,
+    pub headers: Vec<Header>,
+    pub body: MessagePartBody,
+    pub parts: Option<Vec<MessagePart>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -118,10 +126,23 @@ pub struct AttachmentId(String);
 pub struct MessagePartBody {
     pub size: usize,
     pub attachment_id: Option<AttachmentId>,
-    pub data: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_base64")]
+    pub data: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+fn deserialize_base64<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+    let Some(s) = <Option<&str>>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let data = URL_SAFE.decode(s).map_err(serde::de::Error::custom)?;
+    Ok(Some(data))
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Header {
     pub name: String,
     pub value: String,
