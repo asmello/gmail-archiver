@@ -7,6 +7,7 @@ mod store;
 
 use clap::Parser;
 use client::GmailClient;
+use model::{AttachmentId, Message};
 use oauth::{ClientCredentials, TokenManager, client::OAuthClient};
 use std::path::PathBuf;
 use store::Store;
@@ -86,6 +87,23 @@ async fn fetch_messages(client: &GmailClient, store: &Store) -> eyre::Result<()>
         let message = client.message(&message.id).await?;
         store.insert_message(&message)?;
         tracing::debug!(id = %message.id, "message stored successfully");
+        for attachment_id in extract_attachment_ids(&message) {
+            let attachment = client.attachment(&message.id, attachment_id).await?;
+            store.insert_attachment(&message.id, attachment_id, &attachment)?;
+            tracing::debug!(id = %attachment_id, "attachment stored succesfully");
+        }
     }
     Ok(())
+}
+
+fn extract_attachment_ids(message: &Message) -> Vec<&AttachmentId> {
+    let mut attachments = Vec::new();
+    let mut parts = Vec::from([&message.payload]);
+    while let Some(part) = parts.pop() {
+        if let Some(attachment_id) = &part.body.attachment_id {
+            attachments.push(attachment_id);
+        }
+        parts.extend(part.parts.iter().flatten());
+    }
+    attachments
 }

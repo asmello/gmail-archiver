@@ -1,7 +1,8 @@
 use crate::{
     http::GenericClient,
     model::{
-        Label, LabelId, LabelList, Message, MessageId, MinimalMessage, MinimalThread, PageToken,
+        Attachment, AttachmentId, Label, LabelId, LabelList, Message, MessageId, MinimalMessage,
+        PageToken,
     },
     oauth::{AccessToken, TokenManager},
 };
@@ -58,50 +59,50 @@ impl GmailClient {
             .await
     }
 
-    pub fn list_threads(&self) -> impl Stream<Item = eyre::Result<MinimalThread>> {
-        #[derive(Debug, Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct ThreadsPage {
-            threads: Vec<MinimalThread>,
-            next_page_token: Option<PageToken>,
-        }
+    // pub fn list_threads(&self) -> impl Stream<Item = eyre::Result<MinimalThread>> {
+    //     #[derive(Debug, Deserialize)]
+    //     #[serde(rename_all = "camelCase")]
+    //     pub struct ThreadsPage {
+    //         threads: Vec<MinimalThread>,
+    //         next_page_token: Option<PageToken>,
+    //     }
 
-        let (tx, rx) = mpsc::channel(32);
-        tokio::spawn(self.clone().result_wrapper(tx, |this, tx| async move {
-            let fetch_page = async |page_token: Option<PageToken>| -> eyre::Result<ThreadsPage> {
-                this.inner
-                    .http_client
-                    .request(["users", "me", "threads"])
-                    .access_token(this.access_token().await?)
-                    .maybe_query(
-                        page_token
-                            .as_ref()
-                            .map(|t| [("pageToken", t.as_str())])
-                            .as_ref()
-                            .map(|t| t.as_slice()),
-                    )
-                    .send()
-                    .await
-            };
+    //     let (tx, rx) = mpsc::channel(32);
+    //     tokio::spawn(self.clone().result_wrapper(tx, |this, tx| async move {
+    //         let fetch_page = async |page_token: Option<PageToken>| -> eyre::Result<ThreadsPage> {
+    //             this.inner
+    //                 .http_client
+    //                 .request(["users", "me", "threads"])
+    //                 .access_token(this.access_token().await?)
+    //                 .maybe_query(
+    //                     page_token
+    //                         .as_ref()
+    //                         .map(|t| [("pageToken", t.as_str())])
+    //                         .as_ref()
+    //                         .map(|t| t.as_slice()),
+    //                 )
+    //                 .send()
+    //                 .await
+    //         };
 
-            let mut page = fetch_page(None).await?;
-            for thread in page.threads {
-                if tx.send(Ok(thread)).await.is_err() {
-                    return Ok(());
-                }
-            }
-            while let Some(token) = page.next_page_token {
-                page = fetch_page(Some(token)).await?;
-                for thread in page.threads {
-                    if tx.send(Ok(thread)).await.is_err() {
-                        return Ok(());
-                    }
-                }
-            }
-            Ok(())
-        }));
-        ReceiverStream::new(rx)
-    }
+    //         let mut page = fetch_page(None).await?;
+    //         for thread in page.threads {
+    //             if tx.send(Ok(thread)).await.is_err() {
+    //                 return Ok(());
+    //             }
+    //         }
+    //         while let Some(token) = page.next_page_token {
+    //             page = fetch_page(Some(token)).await?;
+    //             for thread in page.threads {
+    //                 if tx.send(Ok(thread)).await.is_err() {
+    //                     return Ok(());
+    //                 }
+    //             }
+    //         }
+    //         Ok(())
+    //     }));
+    //     ReceiverStream::new(rx)
+    // }
 
     pub async fn message(&self, id: &MessageId) -> eyre::Result<Message> {
         self.inner
@@ -156,6 +157,26 @@ impl GmailClient {
             Ok(())
         }));
         ReceiverStream::new(rx)
+    }
+
+    pub async fn attachment(
+        &self,
+        message_id: &MessageId,
+        attachment_id: &AttachmentId,
+    ) -> eyre::Result<Attachment> {
+        self.inner
+            .http_client
+            .request([
+                "users",
+                "me",
+                "messages",
+                message_id.as_str(),
+                "attachments",
+                attachment_id.as_str(),
+            ])
+            .access_token(self.access_token().await?)
+            .send()
+            .await
     }
 
     async fn result_wrapper<T, F>(

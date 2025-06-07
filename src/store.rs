@@ -1,5 +1,5 @@
 use crate::{
-    model::{AttachmentId, Label, LabelId, Message, MessageId},
+    model::{Attachment, AttachmentId, Label, LabelId, Message, MessageId},
     oauth::{OAuthTokens, client::AccessTokenUpdate},
 };
 use chrono::{DateTime, Utc};
@@ -91,6 +91,14 @@ impl Store {
                         data BLOB,
                         FOREIGN KEY (message_id, part_id)
                             REFERENCES message_parts(message_id, part_id),
+                        FOREIGN KEY (message_id) REFERENCES messages (id)
+                    );
+
+                    CREATE TABLE message_attachments (
+                        message_id VARCHAR NOT NULL,
+                        attachment_id VARCHAR NOT NULL,
+                        size BIGINT NOT NULL,
+                        data BLOB NOT NULL,
                         FOREIGN KEY (message_id) REFERENCES messages (id)
                     );
 
@@ -245,6 +253,24 @@ impl Store {
             )?;
         }
         tr.commit()?;
+        Ok(())
+    }
+
+    pub fn insert_attachment(
+        &self,
+        message_id: &MessageId,
+        attachment_id: &AttachmentId,
+        attachment: &Attachment,
+    ) -> eyre::Result<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO message_attachments VALUES (?, ?, ?, ?)",
+            params![
+                message_id.as_str(),
+                attachment_id.as_str(),
+                attachment.size,
+                attachment.data
+            ],
+        )?;
         Ok(())
     }
 }

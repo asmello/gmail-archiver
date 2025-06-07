@@ -15,7 +15,7 @@ impl_as_str!(
     PartId,
     AttachmentId
 );
-impl_display!(LabelId, ThreadId, MessageId, PartId);
+impl_display!(LabelId, ThreadId, MessageId, PartId, AttachmentId);
 
 pub struct PageParts<T> {
     pub next_page_token: Option<PageToken>,
@@ -126,11 +126,11 @@ pub struct AttachmentId(String);
 pub struct MessagePartBody {
     pub size: usize,
     pub attachment_id: Option<AttachmentId>,
-    #[serde(default, deserialize_with = "deserialize_base64")]
+    #[serde(default, deserialize_with = "deserialize_optional_base64")]
     pub data: Option<Vec<u8>>,
 }
 
-fn deserialize_base64<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+fn deserialize_optional_base64<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -140,6 +140,24 @@ where
     };
     let data = URL_SAFE.decode(s).map_err(serde::de::Error::custom)?;
     Ok(Some(data))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub size: usize,
+    #[serde(deserialize_with = "deserialize_base64")]
+    pub data: Vec<u8>,
+}
+
+fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+    let s = <&str>::deserialize(deserializer)?;
+    let data = URL_SAFE.decode(s).map_err(serde::de::Error::custom)?;
+    Ok(data)
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

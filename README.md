@@ -4,7 +4,6 @@ WIP
 
 ## TODO
 
-- Download attachments and store in database
 - Download raw messages and store in database
 - Validate parity
 - Delete originals
