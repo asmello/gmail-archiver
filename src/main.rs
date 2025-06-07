@@ -7,7 +7,7 @@ mod store;
 
 use clap::Parser;
 use client::GmailClient;
-use model::{AttachmentId, Message};
+use model::{AttachmentId, FullMessage};
 use oauth::{ClientCredentials, TokenManager, client::OAuthClient};
 use std::path::PathBuf;
 use store::Store;
@@ -84,9 +84,12 @@ async fn fetch_messages(client: &GmailClient, store: &Store) -> eyre::Result<()>
             tracing::debug!(id = %message.id, "message already stored");
             continue;
         }
-        let message = client.message(&message.id).await?;
+        let message = client.full_message(&message.id).await?;
         store.insert_message(&message)?;
         tracing::debug!(id = %message.id, "message stored successfully");
+        let raw_message = client.raw_message(&message.id).await?;
+        store.insert_raw_message(&message.id, &raw_message.raw)?;
+        tracing::debug!(id = %message.id, "raw message stored successfully");
         for attachment_id in extract_attachment_ids(&message) {
             let attachment = client.attachment(&message.id, attachment_id).await?;
             store.insert_attachment(&message.id, attachment_id, &attachment)?;
@@ -96,7 +99,7 @@ async fn fetch_messages(client: &GmailClient, store: &Store) -> eyre::Result<()>
     Ok(())
 }
 
-fn extract_attachment_ids(message: &Message) -> Vec<&AttachmentId> {
+fn extract_attachment_ids(message: &FullMessage) -> Vec<&AttachmentId> {
     let mut attachments = Vec::new();
     let mut parts = Vec::from([&message.payload]);
     while let Some(part) = parts.pop() {

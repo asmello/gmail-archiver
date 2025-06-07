@@ -1,5 +1,5 @@
 use crate::{
-    model::{Attachment, AttachmentId, Label, LabelId, Message, MessageId},
+    model::{Attachment, AttachmentId, FullMessage, Label, LabelId, MessageId},
     oauth::{OAuthTokens, client::AccessTokenUpdate},
 };
 use chrono::{DateTime, Utc};
@@ -35,8 +35,8 @@ impl Store {
             conn.execute_batch(
                 "
                     CREATE TABLE tokens (
-                        access_token VARCHAR NOT NULL,
-                        refresh_token VARCHAR PRIMARY KEY,
+                        access_token TEXT NOT NULL,
+                        refresh_token TEXT PRIMARY KEY,
                         expires_at TIMESTAMP NOT NULL,
                         refresh_token_expires_at TIMESTAMP
                     );
@@ -46,47 +46,47 @@ impl Store {
                     CREATE TYPE label_type AS ENUM ('SYSTEM', 'USER');
 
                     CREATE TABLE labels (
-                        id VARCHAR PRIMARY KEY,
-                        name VARCHAR NOT NULL,
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
                         message_list_visibility message_list_visibility,
                         label_list_visibility label_list_visibility,
                         type label_type NOT NULL,
-                        color_text VARCHAR,
-                        background_color VARCHAR
+                        color_text TEXT,
+                        background_color TEXT
                     );
 
                     CREATE TABLE messages (
-                        id VARCHAR PRIMARY KEY,
-                        thread_id VARCHAR NOT NULL,
-                        snippet VARCHAR,
-                        history_id VARCHAR NOT NULL,
+                        id TEXT PRIMARY KEY,
+                        thread_id TEXT NOT NULL,
+                        snippet TEXT,
+                        history_id TEXT NOT NULL,
                         internal_date TIMESTAMP NOT NULL,
                         size_estimate BIGINT NOT NULL
                     );
 
                     CREATE TABLE message_labels (
-                        message_id VARCHAR,
-                        label_id VARCHAR,
+                        message_id TEXT,
+                        label_id TEXT,
                         PRIMARY KEY (message_id, label_id),
                         FOREIGN KEY (message_id) REFERENCES messages (id),
                         FOREIGN KEY (label_id) REFERENCES labels (id)
                     );
 
                     CREATE TABLE message_parts (
-                        message_id VARCHAR NOT NULL,
-                        part_id VARCHAR NOT NULL,
-                        mime_type VARCHAR,
-                        filename VARCHAR,
-                        headers STRUCT(name VARCHAR, value VARCHAR)[],
-                        children VARCHAR[],
+                        message_id TEXT NOT NULL,
+                        part_id TEXT NOT NULL,
+                        mime_type TEXT,
+                        filename TEXT,
+                        headers STRUCT(name TEXT, value TEXT)[],
+                        children TEXT[],
                         PRIMARY KEY (message_id, part_id),
                         FOREIGN KEY (message_id) REFERENCES messages (id)
                     );
 
                     CREATE TABLE message_part_body (
-                        message_id VARCHAR NOT NULL,
-                        part_id VARCHAR NOT NULL,
-                        attachment_id VARCHAR,
+                        message_id TEXT NOT NULL,
+                        part_id TEXT NOT NULL,
+                        attachment_id TEXT,
                         size BIGINT NOT NULL,
                         data BLOB,
                         FOREIGN KEY (message_id, part_id)
@@ -95,10 +95,17 @@ impl Store {
                     );
 
                     CREATE TABLE message_attachments (
-                        message_id VARCHAR NOT NULL,
-                        attachment_id VARCHAR NOT NULL,
+                        message_id TEXT NOT NULL,
+                        attachment_id TEXT NOT NULL,
                         size BIGINT NOT NULL,
                         data BLOB NOT NULL,
+                        PRIMARY KEY (message_id, attachment_id),
+                        FOREIGN KEY (message_id) REFERENCES messages (id)
+                    );
+
+                    CREATE TABLE raw_messages (
+                        message_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL,
                         FOREIGN KEY (message_id) REFERENCES messages (id)
                     );
 
@@ -193,7 +200,7 @@ impl Store {
         Ok(count > 0)
     }
 
-    pub fn insert_message(&self, message: &Message) -> eyre::Result<()> {
+    pub fn insert_message(&self, message: &FullMessage) -> eyre::Result<()> {
         let mut guard = self.conn.lock().unwrap();
         let tr = guard.transaction()?;
         tr.execute(
@@ -270,6 +277,14 @@ impl Store {
                 attachment.size,
                 attachment.data
             ],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_raw_message(&self, message_id: &MessageId, data: &[u8]) -> eyre::Result<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO raw_messages VALUES (?, ?)",
+            params![message_id.as_str(), data],
         )?;
         Ok(())
     }

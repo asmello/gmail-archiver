@@ -1,13 +1,13 @@
 use crate::{
     http::GenericClient,
     model::{
-        Attachment, AttachmentId, Label, LabelId, LabelList, Message, MessageId, MinimalMessage,
-        PageToken,
+        Attachment, AttachmentId, FullMessage, Label, LabelId, LabelList, MessageId,
+        MinimalMessage, PageToken, RawMessage,
     },
     oauth::{AccessToken, TokenManager},
 };
 use reqwest::Url;
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use std::sync::{Arc, LazyLock};
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
@@ -104,14 +104,25 @@ impl GmailClient {
     //     ReceiverStream::new(rx)
     // }
 
-    pub async fn message(&self, id: &MessageId) -> eyre::Result<Message> {
+    async fn message<M>(&self, id: &MessageId, format: &str) -> eyre::Result<M>
+    where
+        M: DeserializeOwned,
+    {
         self.inner
             .http_client
             .request(["users", "me", "messages", id.as_str()])
             .access_token(self.access_token().await?)
-            .query(&[("format", "full")])
+            .query(&[("format", format)])
             .send()
             .await
+    }
+
+    pub async fn full_message(&self, id: &MessageId) -> eyre::Result<FullMessage> {
+        self.message(id, "full").await
+    }
+
+    pub async fn raw_message(&self, id: &MessageId) -> eyre::Result<RawMessage> {
+        self.message(id, "raw").await
     }
 
     pub fn list_messages(&self) -> impl Stream<Item = eyre::Result<MinimalMessage>> {

@@ -81,7 +81,7 @@ pub struct LabelId(String);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Message {
+pub struct FullMessage {
     pub id: MessageId,
     pub thread_id: ThreadId,
     pub label_ids: Vec<LabelId>,
@@ -102,6 +102,21 @@ where
     let dt = DateTime::from_timestamp_millis(millis)
         .ok_or_else(|| serde::de::Error::custom("invalid range"))?;
     Ok(dt)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawMessage {
+    pub id: MessageId,
+    pub thread_id: ThreadId,
+    pub label_ids: Vec<LabelId>,
+    pub snippet: String,
+    pub history_id: HistoryId,
+    #[serde(deserialize_with = "deserialize_unix_ts_str")]
+    pub internal_date: DateTime<Utc>,
+    pub size_estimate: usize,
+    #[serde(deserialize_with = "deserialize_base64")]
+    pub raw: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
