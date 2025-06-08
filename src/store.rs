@@ -232,11 +232,9 @@ impl Store {
         let mut message_parts = Vec::from([&message.payload]);
         while let Some(message_part) = message_parts.pop() {
             let mut children = Vec::new();
-            if let Some(parts) = &message_part.parts {
-                for part in parts {
-                    children.push(part.part_id.to_string());
-                    message_parts.push(part);
-                }
+            for part in &message_part.parts {
+                children.push(part.part_id.to_string());
+                message_parts.push(part);
             }
             // the duckdb crate does not support composite types directly.
             // see https://github.com/duckdb/duckdb-rs/issues/394

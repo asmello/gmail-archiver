@@ -138,7 +138,7 @@ fn extract_attachment_ids(message: &FullMessage) -> Vec<&AttachmentId> {
         if let Some(attachment_id) = &part.body.attachment_id {
             attachments.push(attachment_id);
         }
-        parts.extend(part.parts.iter().flatten());
+        parts.extend(part.parts.iter());
     }
     attachments
 }

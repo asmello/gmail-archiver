@@ -128,9 +128,11 @@ pub struct MessagePart {
     pub part_id: PartId,
     pub mime_type: String,
     pub filename: String,
+    #[serde(default)]
     pub headers: Vec<Header>,
     pub body: MessagePartBody,
-    pub parts: Option<Vec<MessagePart>>,
+    #[serde(default)]
+    pub parts: Vec<MessagePart>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
