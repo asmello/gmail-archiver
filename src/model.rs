@@ -109,6 +109,7 @@ where
 pub struct RawMessage {
     pub id: MessageId,
     pub thread_id: ThreadId,
+    #[serde(default)]
     pub label_ids: Vec<LabelId>,
     pub snippet: String,
     pub history_id: HistoryId,
